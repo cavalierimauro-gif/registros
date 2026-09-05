@@ -1807,7 +1807,7 @@ function renderSeguimiento(){
   const anios=aniosExistentes();
   p.innerHTML=`
     <h2>Seguimiento de informes</h2>
-    <div class="hint">Publicadores que todavía no informaron (Estado vacío o sin tarjeta) en el mes seleccionado arriba, para pedirles el informe.</div>
+    <div class="hint">Publicadores con tarjeta en el año de servicio seleccionado que todavía no informaron (Estado vacío) en el mes de arriba, para pedirles el informe.</div>
     <div id="segArea"></div>`;
   renderSegArea();
 }
@@ -1817,7 +1817,8 @@ function renderSegArea(){
   const faltan=[], informaron=[]; let otraCong=0;
   sortPubs(db.publicadores).forEach(pub=>{
     const t=db.tarjetas.find(x=>x.publicadorId===pub.id&&x.anioServicio===gAnio);
-    const m=t? t.meses[gMes] : null;
+    if(!t) return; // sin tarjeta para este año de servicio: no se lista en seguimiento
+    const m=t.meses[gMes]||null;
     if(m && isActivo(m) && m.fueraCong==="Sí"){ otraCong++; return; } // estaba en otra congregación: no se lista
     if(cuenta(m)) informaron.push(pub); else faltan.push(pub);
   });
