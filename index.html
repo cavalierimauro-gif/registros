@@ -1372,10 +1372,8 @@ function renderDatos(){
     </div>
 
     <div class="rep-section">
-      <h3>Archivo de datos</h3>
-      <div class="hint">Para no depender de la caché del navegador, vinculá un archivo <code>.json</code> (guardalo en la misma carpeta que este HTML). Mientras esté vinculado, cada cambio se guarda automáticamente en ese archivo.</div>
-      <div id="fileStatus" class="metric-note" style="margin-bottom:10px"></div>
-      <div class="rep-controls" id="fileControls"></div>
+      <h3>Almacenamiento y respaldo</h3>
+      <div class="hint">Los cambios se guardan automáticamente en este dispositivo (en el navegador). Para tener una copia de seguridad —o para pasar los datos a otro equipo— usá <strong>Exportar respaldo (.json)</strong> e <strong>Importar respaldo</strong> aquí abajo.</div>
     </div>
 
     <div class="toolbar">
@@ -1404,20 +1402,7 @@ function renderDatos(){
     db.config.whatsappModo = document.getElementById("cfgWaModo").value;
     save(); render(); flashStatus("Configuración guardada ✓");
   };
-  // Sección de archivo de datos
-  const fs=document.getElementById("fileStatus"), fc=document.getElementById("fileControls");
-  if(fs&&fc){
-    if(!FS_SUPPORTED){ fs.innerHTML="Este navegador no permite guardar directamente en un archivo. Usá Chrome o Edge de escritorio, o el respaldo manual de más abajo."; }
-    else if(fileHandle){ fs.innerHTML=`Vinculado a: <strong>${esc(fileHandle.name||"archivo.json")}</strong> · guardado automático activo.`;
-      fc.innerHTML=`<button class="btn ghost" id="fileUnlink">Desvincular</button><button class="btn ghost" id="fileOpen">Abrir otro archivo…</button>`;
-      document.getElementById("fileUnlink").onclick=desvincularArchivo;
-      document.getElementById("fileOpen").onclick=abrirArchivo;
-    } else { fs.innerHTML="No hay ningún archivo vinculado. Los datos se están guardando solo en este navegador.";
-      fc.innerHTML=`<button class="btn" id="fileLink">Vincular archivo de datos…</button><button class="btn ghost" id="fileOpen">Abrir archivo existente…</button>`;
-      document.getElementById("fileLink").onclick=vincularArchivo;
-      document.getElementById("fileOpen").onclick=abrirArchivo;
-    }
-  }
+  // El almacenamiento es automático en el navegador (IndexedDB + localStorage); el respaldo se maneja con Exportar/Importar .json.
   document.getElementById("exportBtn").onclick=exportar;
   document.getElementById("importBtn").onclick=()=>document.getElementById("importFile").click();
   document.getElementById("importFile").onchange=importar;
@@ -1994,7 +1979,6 @@ document.getElementById("varClose").onclick=()=>document.getElementById("varDial
 setupOverlay();
 setupDateFields();
 render();
-initFileStore();
 hydrateFromIdb();
 /* Service worker: offline garantizado cuando la app se sirve por http/https (p. ej. GitHub Pages).
    Abierta como archivo local no se registra, y no molesta. */
