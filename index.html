@@ -1477,11 +1477,23 @@ function shareSupported(){
 // Compartir el respaldo .json hacia afuera del dispositivo (Drive, WhatsApp, mail…).
 async function compartirRespaldo(){
   const stamp=new Date().toISOString().slice(0,10);
-  const file=new File([JSON.stringify(db,null,2)], `registros-publicadores-${stamp}.json`, {type:"application/json"});
-  try{
-    if(shareSupported()){ await navigator.share({files:[file], title:"Respaldo de Registros de Publicadores"}); resetBackupCounter(); flashStatus("Respaldo compartido ✓"); }
-    else { exportar(); }
-  }catch(e){ if(e && e.name!=="AbortError") flashStatus("No se pudo compartir", true); }
+  const fname=`registros-publicadores-${stamp}.json`;
+  const json=JSON.stringify(db,null,2);
+  // Intentamos el menú de compartir nativo probando dos tipos (algunos navegadores no aceptan application/json)
+  for(const t of ["application/json","text/plain"]){
+    try{
+      const file=new File([json], fname, {type:t});
+      if(navigator.canShare && navigator.canShare({files:[file]})){
+        await navigator.share({files:[file], title:"Respaldo de Registros de Publicadores"});
+        resetBackupCounter(); flashStatus("Respaldo compartido ✓"); return;
+      }
+    }catch(e){
+      if(e && e.name==="AbortError") return;   // el usuario cerró el menú de compartir
+      // si falló por el tipo u otra causa, probamos el siguiente / caemos a descarga
+    }
+  }
+  // Fallback universal: descargar el .json (queda en Descargas; de ahí se puede mover a Drive/WhatsApp)
+  exportar();
 }
 // Recordatorio suave de respaldo (solo cuando no hay archivo vinculado que respalde automáticamente).
 const BACKUP_REMIND_AT=20;
