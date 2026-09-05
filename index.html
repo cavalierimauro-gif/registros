@@ -72,6 +72,7 @@
   .field{display:flex;flex-direction:column;gap:4px}
   .field label{font-size:11.5px;font-weight:600;color:var(--grey-mid);text-transform:uppercase;letter-spacing:.4px}
   .field input,.field select,.field textarea{padding:8px 10px;border:1px solid var(--grey-line);border-radius:8px;background:var(--white)}
+   .field input[type=date]{width:100%;box-sizing:border-box;min-height:38px}
   .field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--orange)}
   fieldset{border:1px solid var(--grey-line);border-radius:10px;padding:14px 16px 16px;margin:0 0 16px}
   fieldset legend{font-size:12px;font-weight:700;padding:0 8px;color:var(--orange-dark)}
@@ -327,21 +328,9 @@
         <div class="grid-form">
           <div class="field"><label>Nombre <span class="req">*</span></label><input name="nombre" required></div>
           <div class="field"><label>Fecha de nacimiento</label>
-            <div class="datefield" data-name="fechaNacimiento">
-              <input class="dseg d" maxlength="2" inputmode="numeric" placeholder="DD" aria-label="Día">
-              <span class="dsep">/</span>
-              <input class="dseg m" data-mon="" maxlength="3" placeholder="MMM" aria-label="Mes">
-              <span class="dsep">/</span>
-              <input class="dseg y" maxlength="4" inputmode="numeric" placeholder="AAAA" aria-label="Año">
-            </div></div>
+            <input type="date" data-name="fechaNacimiento" aria-label="Fecha de nacimiento"></div>
           <div class="field"><label>Fecha de bautismo</label>
-            <div class="datefield" data-name="fechaBautismo">
-              <input class="dseg d" maxlength="2" inputmode="numeric" placeholder="DD" aria-label="Día">
-              <span class="dsep">/</span>
-              <input class="dseg m" data-mon="" maxlength="3" placeholder="MMM" aria-label="Mes">
-              <span class="dsep">/</span>
-              <input class="dseg y" maxlength="4" inputmode="numeric" placeholder="AAAA" aria-label="Año">
-            </div></div>
+            <input type="date" data-name="fechaBautismo" aria-label="Fecha de bautismo"></div>
           <div class="field"><label>Género</label><select name="genero"><option>Mujer</option><option>Hombre</option></select></div>
           <div class="field"><label>Dirección</label><input name="direccion"></div>
           <div class="field"><label>Teléfono fijo</label><input name="telefonoFijo"></div>
@@ -758,100 +747,24 @@ function delPublicador(id){
   save(); render();
 }
 
-/* ===== Componente de fecha (Día / Mes MMM / Año) ===== */
-const MMM=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
-function getDateField(name){
-  const c=pubForm.querySelector(`.datefield[data-name="${name}"]`); if(!c) return "";
-  const d=c.querySelector(".d").value.trim(), mon=c.querySelector(".m").dataset.mon, y=c.querySelector(".y").value.trim();
-  if(!d&&!mon&&!y) return "";
-  const nd=+d, nm=+mon, ny=+y;
-  if(!ny||!nm||!nd||nm<1||nm>12||nd<1||nd>31) return "";
-  return `${String(ny).padStart(4,"0")}-${String(nm).padStart(2,"0")}-${String(nd).padStart(2,"0")}`;
-}
+/* ===== Campos de fecha: selector nativo del sistema (input type="date") ===== */
 function setDateField(name, iso){
-  const c=pubForm.querySelector(`.datefield[data-name="${name}"]`); if(!c) return;
-  const md=c.querySelector(".m");
-  if(iso){ const p=String(iso).split("-"); if(p.length===3){
-    c.querySelector(".d").value=String(+p[2]).padStart(2,"0");
-    const mon=+p[1]; md.dataset.mon=mon; md.value=MMM[mon-1]||"";
-    c.querySelector(".y").value=p[0]; return;
-  }}
-  c.querySelector(".d").value=""; md.dataset.mon=""; md.value=""; c.querySelector(".y").value="";
+  const el=pubForm.querySelector(`input[type="date"][data-name="${name}"]`);
+  if(el) el.value = iso ? String(iso).slice(0,10) : "";
 }
-// Estado de un campo de fecha: vacío, válido (año de 4 dígitos) o inválido.
+// Estado de un campo de fecha (vacío / válido). El selector nativo solo entrega fechas de calendario reales (AAAA-MM-DD).
 function dateFieldState(name){
-  const c=pubForm.querySelector(`.datefield[data-name="${name}"]`); if(!c) return {empty:true,ok:true,iso:""};
-  const mEl=c.querySelector(".m");
-  const d=c.querySelector(".d").value.trim(), y=c.querySelector(".y").value.trim();
-  const mon = mEl.value.trim() ? (+mEl.dataset.mon||0) : 0;   // si el mes visible está vacío, cuenta como vacío
-  if(!d && !mon && !y) return {empty:true, ok:true, iso:""};  // fecha totalmente vacía: permitida
-  const ok = /^\d{4}$/.test(y) && mon>=1 && mon<=12 && +d>=1 && +d<=31;
-  return {empty:false, ok, iso: ok? `${y}-${String(mon).padStart(2,"0")}-${String(+d).padStart(2,"0")}` : ""};
+  const el=pubForm.querySelector(`input[type="date"][data-name="${name}"]`);
+  if(!el) return {empty:true, ok:true, iso:""};
+  const v=(el.value||"").trim();
+  if(!v) return {empty:true, ok:true, iso:""};                 // fecha vacía: permitida
+  const ok=/^\d{4}-\d{2}-\d{2}$/.test(v);
+  return {empty:false, ok, iso: ok? v : ""};
 }
-function setMonthSeg(md, mon){ if(!mon){ md.dataset.mon=""; md.value=""; return; } md.dataset.mon=String(mon); md.value=MMM[mon-1]; }
+// Tope máximo = hoy: no se pueden elegir fechas de nacimiento/bautismo en el futuro.
 function setupDateFields(){
-  document.addEventListener("input", e=>{
-    const seg=e.target.closest(".datefield .dseg"); if(!seg || seg.classList.contains("m")) return;
-    seg.value=seg.value.replace(/\D/g,"");
-    const max=+seg.getAttribute("maxlength");
-    if(seg.value.length>=max){ const segs=[...seg.closest(".datefield").querySelectorAll(".dseg")]; const i=segs.indexOf(seg); if(i<segs.length-1) segs[i+1].focus(); }
-  });
-  const focusY=seg=> seg.closest(".datefield").querySelector(".y").focus();
-  document.addEventListener("keydown", e=>{
-    const seg=e.target.closest(".datefield .dseg"); if(!seg) return;
-    const nowYear=new Date().getFullYear();
-
-    if(seg.classList.contains("m")){                 // ===== Segmento Mes (MMM) =====
-      if(e.key==="ArrowUp" || e.key==="ArrowDown"){
-        e.preventDefault();
-        let mon=+seg.dataset.mon||0; const up=e.key==="ArrowUp";
-        if(mon===0) mon= up?1:12; else mon = up? (mon>=12?1:mon+1) : (mon<=1?12:mon-1);
-        setMonthSeg(seg, mon); seg.dataset.buf=""; return;
-      }
-      if(e.key==="Backspace" || e.key==="Delete"){ e.preventDefault(); setMonthSeg(seg, 0); seg.dataset.buf=""; return; }
-      if(/^[0-9]$/.test(e.key)){                     // tipear número de mes → se convierte a MMM
-        e.preventDefault();
-        const now=Date.now();
-        if(seg.dataset.bufTime && now-(+seg.dataset.bufTime)>1200) seg.dataset.buf="";
-        seg.dataset.bufTime=String(now);
-        let buf=(seg.dataset.buf||"")+e.key;
-        if(buf.length===1){
-          const n=+buf;
-          if(n===0){ seg.dataset.buf="0"; }                              // espera segundo dígito
-          else if(n===1){ setMonthSeg(seg,1); seg.dataset.buf="1"; }     // tentativo: podría ser 10/11/12
-          else { setMonthSeg(seg,n); seg.dataset.buf=""; focusY(seg); }  // 2..9 → mes completo
-        } else {
-          seg.dataset.buf="";
-          const n=+buf;
-          if(n>=1 && n<=12){ setMonthSeg(seg,n); } else { const d=+e.key; if(d>=1&&d<=12) setMonthSeg(seg,d); }
-          focusY(seg);
-        }
-        return;
-      }
-      if(/^[a-záéíóúñ]$/i.test(e.key)){              // salto por inicial en orden de meses (a → Abr, luego Ago)
-        e.preventDefault();
-        const L=e.key.toLowerCase();
-        const matches=[]; for(let idx=0;idx<12;idx++){ if(MMM[idx][0].toLowerCase()===L) matches.push(idx+1); }
-        if(matches.length){
-          const cur=+seg.dataset.mon||0; const pos=matches.indexOf(cur);
-          setMonthSeg(seg, pos===-1? matches[0] : matches[(pos+1)%matches.length]);
-        }
-        seg.dataset.buf=""; return;
-      }
-      if(e.key.length===1){ e.preventDefault(); }    // bloquear otras teclas imprimibles
-      return;
-    }
-
-    if(e.key!=="ArrowUp" && e.key!=="ArrowDown") return;   // ===== Día / Año: flechas =====
-    e.preventDefault();
-    const up=e.key==="ArrowUp";
-    if(seg.classList.contains("d")){
-      let v=+seg.value||0; if(v===0) v= up?1:31; else v = up? (v>=31?1:v+1) : (v<=1?31:v-1);
-      seg.value=String(v).padStart(2,"0");
-    } else if(seg.classList.contains("y")){
-      let v=+seg.value|| nowYear; v = up? v+1 : Math.max(1, v-1); seg.value=String(v);
-    }
-  });
+  const today=new Date().toISOString().slice(0,10);
+  document.querySelectorAll('#pubForm input[type="date"]').forEach(el=>{ el.max=today; });
 }
 
 const pubDialog=document.getElementById("pubDialog");
@@ -861,7 +774,7 @@ let editingPubId=null;
 function openPubDialog(id){
   editingPubId=id||null;
   pubForm.reset();
-  setDateField("fechaNacimiento",""); setDateField("fechaBautismo",""); // limpia también data-mon del mes
+  setDateField("fechaNacimiento",""); setDateField("fechaBautismo",""); // limpia ambos campos de fecha
   document.getElementById("pubFormError").style.display="none";
   document.getElementById("pubModalTitle").textContent = id? "Editar publicador":"Nuevo publicador";
   if(id){
