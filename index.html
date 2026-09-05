@@ -307,6 +307,7 @@
   <span>Hay un archivo de datos vinculado. Reconectalo para seguir guardando en él.</span>
   <button class="btn sm" id="reconnectBtn">Reconectar archivo</button>
 </div>
+<div id="backupReminder" style="display:none;align-items:center;gap:10px;background:#fff4e5;border-bottom:1px solid #f0d9b5;padding:8px 20px;font-size:13px;color:#7a4f14"></div>
 
 <div class="wrap">
   <nav class="tabs" id="tabs">
@@ -418,7 +419,8 @@ function save(){
   try{ localStorage.setItem(STORE_KEY, JSON.stringify(db)); }
   catch(e){ flashStatus("Error al guardar", true); }
   scheduleIdbBackup();
-  if(fileHandle){ scheduleFileWrite(); } else { flashStatus("Guardado local ✓"); }
+  if(fileHandle){ scheduleFileWrite(); resetBackupCounter(); }   // el archivo vinculado ya es un respaldo durable
+  else { flashStatus("Guardado local ✓"); bumpBackupCounter(); }
 }
 
 /* ===== Persistencia en archivo (File System Access API) ===== */
@@ -1378,11 +1380,14 @@ function renderDatos(){
 
     <div class="rep-section">
       <h3>Almacenamiento y respaldo</h3>
-      <div class="hint">Los cambios se guardan automáticamente en este dispositivo (en el navegador). Para tener una copia de seguridad —o para pasar los datos a otro equipo— usá <strong>Exportar respaldo (.json)</strong> e <strong>Importar respaldo</strong> aquí abajo.</div>
+      <div class="hint">Los cambios se guardan solos en este dispositivo. En <strong>PC (Chrome/Edge)</strong> podés además vincular un archivo <code>.json</code> para que cada cambio se escriba al instante en ese archivo. En cualquier dispositivo, tené siempre una copia con <strong>Exportar</strong> o <strong>Compartir</strong>.</div>
+      <div id="fileStatus" class="metric-note" style="margin-bottom:10px"></div>
+      <div class="rep-controls" id="fileControls"></div>
     </div>
 
     <div class="toolbar">
       <button class="btn dark" id="exportBtn">⬇ Exportar respaldo (.json)</button>
+      <button class="btn" id="shareBtn" style="display:none">📤 Compartir respaldo</button>
       <button class="btn ghost" id="importBtn">⬆ Importar respaldo</button>
       <input type="file" id="importFile" accept="application/json" style="display:none">
       <div class="spacer"></div>
@@ -1407,10 +1412,28 @@ function renderDatos(){
     db.config.whatsappModo = document.getElementById("cfgWaModo").value;
     save(); render(); flashStatus("Configuración guardada ✓");
   };
-  // El almacenamiento es automático en el navegador (IndexedDB + localStorage); el respaldo se maneja con Exportar/Importar .json.
   document.getElementById("exportBtn").onclick=exportar;
   document.getElementById("importBtn").onclick=()=>document.getElementById("importFile").click();
   document.getElementById("importFile").onchange=importar;
+  // Compartir respaldo: solo aparece si el dispositivo puede compartir archivos (celulares)
+  const shareBtn=document.getElementById("shareBtn");
+  if(shareBtn && shareSupported()){ shareBtn.style.display=""; shareBtn.onclick=compartirRespaldo; }
+  // Controles de archivo de datos (solo escritorio con File System Access API)
+  const fs=document.getElementById("fileStatus"), fc=document.getElementById("fileControls");
+  if(fs&&fc){
+    if(!FS_SUPPORTED){ fs.innerHTML=""; fc.innerHTML=""; }
+    else if(fileHandle){
+      fs.innerHTML=`Vinculado a: <strong>${esc(fileHandle.name||"archivo.json")}</strong> · cada cambio se guarda automáticamente en ese archivo.`;
+      fc.innerHTML=`<button class="btn ghost" id="fileUnlink">Desvincular</button><button class="btn ghost" id="fileOpen">Abrir otro archivo…</button>`;
+      document.getElementById("fileUnlink").onclick=desvincularArchivo;
+      document.getElementById("fileOpen").onclick=abrirArchivo;
+    } else {
+      fs.innerHTML="En esta computadora podés guardar cada cambio directamente en un archivo .json (no se borra al limpiar el navegador).";
+      fc.innerHTML=`<button class="btn" id="fileLink">Vincular archivo de datos…</button><button class="btn ghost" id="fileOpen">Abrir archivo existente…</button>`;
+      document.getElementById("fileLink").onclick=vincularArchivo;
+      document.getElementById("fileOpen").onclick=abrirArchivo;
+    }
+  }
   document.getElementById("wipeBtn").onclick=()=>{
     if(!confirm("Esto borra TODOS los datos de este equipo. ¿Continuar?")) return;
     if(!confirm("Confirmá una vez más: se perderán publicadores, tarjetas y asistencia.")) return;
@@ -1422,7 +1445,7 @@ function exportar(){
   const blob=new Blob([JSON.stringify(db,null,2)],{type:"application/json"});
   const url=URL.createObjectURL(blob);
   const a=document.createElement("a"); a.href=url; a.download=`registros-publicadores-${stamp}.json`; a.click();
-  URL.revokeObjectURL(url); flashStatus("Respaldo exportado ✓");
+  URL.revokeObjectURL(url); flashStatus("Respaldo exportado ✓"); resetBackupCounter();
 }
 function importar(e){
   const file=e.target.files[0]; if(!file) return;
@@ -1438,6 +1461,44 @@ function importar(e){
     e.target.value="";
   };
   reader.readAsText(file);
+}
+
+/* ===== Refuerzo de seguridad de datos (persistencia + respaldo) ===== */
+// Capa 1: pedir almacenamiento persistente para que el navegador no borre los datos por falta de espacio o inactividad.
+async function requestPersistentStorage(){
+  try{ if(navigator.storage && navigator.storage.persist){ await navigator.storage.persist(); } }
+  catch(e){ /* no disponible: se ignora */ }
+}
+// Capa 3 (celular): ¿el dispositivo puede compartir archivos?
+function shareSupported(){
+  try{ return !!(navigator.canShare && navigator.canShare({files:[new File(["{}"],"r.json",{type:"application/json"})]})); }
+  catch(e){ return false; }
+}
+// Compartir el respaldo .json hacia afuera del dispositivo (Drive, WhatsApp, mail…).
+async function compartirRespaldo(){
+  const stamp=new Date().toISOString().slice(0,10);
+  const file=new File([JSON.stringify(db,null,2)], `registros-publicadores-${stamp}.json`, {type:"application/json"});
+  try{
+    if(shareSupported()){ await navigator.share({files:[file], title:"Respaldo de Registros de Publicadores"}); resetBackupCounter(); flashStatus("Respaldo compartido ✓"); }
+    else { exportar(); }
+  }catch(e){ if(e && e.name!=="AbortError") flashStatus("No se pudo compartir", true); }
+}
+// Recordatorio suave de respaldo (solo cuando no hay archivo vinculado que respalde automáticamente).
+const BACKUP_REMIND_AT=20;
+function bumpBackupCounter(){ const n=(+(localStorage.getItem("cambiosSinRespaldo")||0))+1; localStorage.setItem("cambiosSinRespaldo",String(n)); renderBackupReminder(); }
+function resetBackupCounter(){ localStorage.setItem("cambiosSinRespaldo","0"); const el=document.getElementById("backupReminder"); if(el) el.dataset.dismissed=""; renderBackupReminder(); }
+function renderBackupReminder(){
+  const el=document.getElementById("backupReminder"); if(!el) return;
+  const n=+(localStorage.getItem("cambiosSinRespaldo")||0);
+  if(!fileHandle && n>=BACKUP_REMIND_AT && el.dataset.dismissed!=="1"){
+    el.style.display="flex";
+    el.innerHTML=`<span>Hace ${n} cambios que no hacés un respaldo. Guardá una copia fuera del dispositivo.</span>`
+      +`<span style="flex:1"></span>`
+      +`<button class="btn sm" id="brNow">Respaldar</button>`
+      +`<button class="btn sm ghost" id="brLater">Más tarde</button>`;
+    document.getElementById("brNow").onclick=()=>{ shareSupported()? compartirRespaldo() : exportar(); };
+    document.getElementById("brLater").onclick=()=>{ el.dataset.dismissed="1"; el.style.display="none"; };
+  } else { el.style.display="none"; }
 }
 
 /* ============ Helpers de reportes ============ */
@@ -1984,7 +2045,10 @@ document.getElementById("varClose").onclick=()=>document.getElementById("varDial
 setupOverlay();
 setupDateFields();
 render();
+initFileStore();
 hydrateFromIdb();
+requestPersistentStorage();
+renderBackupReminder();
 /* Service worker: offline garantizado cuando la app se sirve por http/https (p. ej. GitHub Pages).
    Abierta como archivo local no se registra, y no molesta. */
 if("serviceWorker" in navigator && location.protocol.indexOf("http")===0){
